@@ -44,7 +44,7 @@ export default function MonthlySchedule() {
               <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead>
                   <tr>
-                    <th className="p-4 border-b-2 border-r-2 border-gray-900 font-bold text-gray-900 w-48 text-sm uppercase tracking-wider text-center bg-white">
+                    <th className="sticky left-0 z-20 p-4 border-b-2 border-r-2 border-gray-900 font-bold text-gray-900 w-48 text-sm uppercase tracking-wider text-center bg-white">
                       Horarios
                     </th>
                     {week.weekDays.map((day, dIdx) => {
@@ -72,7 +72,7 @@ export default function MonthlySchedule() {
                     
                     return (
                       <tr key={rIdx} className="transition-colors">
-                        <td className="p-4 border-r-2 border-gray-900 font-medium text-gray-900 bg-white text-center">
+                        <td className="sticky left-0 z-10 p-4 border-r-2 border-gray-900 font-medium text-gray-900 bg-white text-center">
                           <div className="flex flex-col items-center justify-center">
                             <span className="text-sm font-black">{time}</span>
                             {desc && <span className="text-xs text-gray-500 font-bold mt-0.5">{desc}</span>}
