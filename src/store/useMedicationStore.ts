@@ -46,15 +46,118 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
   
   setMedications: (medications) => set({ medications }),
   
-  addMedication: (medication) => set((state) => ({ medications: [...state.medications, medication] })),
+  addMedication: async (medication) => {
+    set({ isLoading: true });
+    try {
+      // First get patient id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('user_id', user.id)
+        .single();
+        
+      if (!patient) throw new Error('Patient not found');
+
+      const { id, schedules, ...medData } = medication;
+      
+      // Insert medication
+      const { data: newMed, error: medErr } = await supabase
+        .from('medications')
+        .insert({ ...medData, patient_id: patient.id })
+        .select()
+        .single();
+        
+      if (medErr) throw medErr;
+
+      // Insert schedules
+      if (schedules && schedules.length > 0) {
+        const schedulesToInsert = schedules.map(s => {
+          const { id: schedId, ...sData } = s; // remove local id if exists
+          return { ...sData, medication_id: newMed.id };
+        });
+        
+        const { error: schedErr } = await supabase
+          .from('schedules')
+          .insert(schedulesToInsert);
+          
+        if (schedErr) throw schedErr;
+      }
+
+      // Refresh data
+      await get().fetchMedications();
+    } catch (error) {
+      console.error('Error adding medication:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
   
-  updateMedication: (id, updatedMedication) => set((state) => ({
-    medications: state.medications.map(med => med.id === id ? { ...med, ...updatedMedication } : med)
-  })),
+  updateMedication: async (id, updatedMedication) => {
+    set({ isLoading: true });
+    try {
+      const { schedules, id: _, patient_id, ...medData } = updatedMedication;
+      
+      // Update medication
+      const { error: medErr } = await supabase
+        .from('medications')
+        .update(medData)
+        .eq('id', id);
+        
+      if (medErr) throw medErr;
+
+      // Update schedules (simplest is to delete old and insert new)
+      if (schedules) {
+        const { error: deleteErr } = await supabase
+          .from('schedules')
+          .delete()
+          .eq('medication_id', id);
+          
+        if (deleteErr) throw deleteErr;
+
+        if (schedules.length > 0) {
+          const schedulesToInsert = schedules.map(s => {
+            const { id: schedId, ...sData } = s;
+            return { ...sData, medication_id: id };
+          });
+          
+          const { error: insertErr } = await supabase
+            .from('schedules')
+            .insert(schedulesToInsert);
+            
+          if (insertErr) throw insertErr;
+        }
+      }
+
+      // Refresh data
+      await get().fetchMedications();
+    } catch (error) {
+      console.error('Error updating medication:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
   
-  deleteMedication: (id) => set((state) => ({
-    medications: state.medications.filter(med => med.id !== id)
-  })),
+  deleteMedication: async (id) => {
+    set({ isLoading: true });
+    try {
+      const { error } = await supabase
+        .from('medications')
+        .delete()
+        .eq('id', id);
+        
+      if (error) throw error;
+
+      // Refresh data
+      await get().fetchMedications();
+    } catch (error) {
+      console.error('Error deleting medication:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
 
   fetchMedications: async () => {
     set({ isLoading: true });
