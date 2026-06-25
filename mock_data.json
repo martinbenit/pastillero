@@ -1,0 +1,20 @@
+{
+  "user_id": "00000000-0000-0000-0000-000000000000",
+  "patient_name": "Nombre del Paciente",
+  "patient_age": 70,
+  "medications": [
+    {
+      "name": "Ejemplo Medicamento",
+      "dose": "50mg",
+      "instructions": "Con el desayuno",
+      "schedules": [
+        {
+          "time_slot": "08:00 AM (Mañana)",
+          "frequency": "diario",
+          "specific_days": [],
+          "start_date": "2026-06-01"
+        }
+      ]
+    }
+  ]
+}
