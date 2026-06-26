@@ -12,7 +12,9 @@ webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 export async function GET(request: Request) {
   // Verify cron secret to prevent unauthorized calls
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const expectedSecret = process.env.CRON_SECRET || 'pastillero_cron_secret_2026';
+  
+  if (authHeader !== `Bearer ${expectedSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -67,25 +69,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'No users to notify' });
     }
 
-    // Query 2: Get push subscriptions
-    const { data: subsData, error: subsError } = await supabaseAdmin
-      .from('push_subscriptions')
-      .select('user_id, endpoint, p256dh, auth')
-      .in('user_id', Array.from(userIds));
-
-    if (subsError) throw subsError;
-
-    // Create a map of user_id -> push subscriptions
-    const userSubsMap = new Map<string, any[]>();
-    (subsData || []).forEach(sub => {
-      if (!userSubsMap.has(sub.user_id)) {
-        userSubsMap.set(sub.user_id, []);
-      }
-      userSubsMap.get(sub.user_id)!.push(sub);
-    });
-
     // Filter by frequency and build notifications map
-    const toNotify: Map<string, { endpoint: string; p256dh: string; auth: string; meds: string[] }> = new Map();
+    const medsByUser = new Map<string, string[]>();
 
     for (const row of schedulesData) {
       let shouldNotify = false;
@@ -113,50 +98,72 @@ export async function GET(request: Request) {
         const medName = (row as any).medications?.name;
         const medDose = (row as any).medications?.dose;
 
-        if (userId && userSubsMap.has(userId)) {
-          const userSubs = userSubsMap.get(userId)!;
-          for (const sub of userSubs) {
-            const key = sub.endpoint;
-            if (!toNotify.has(key)) {
-              toNotify.set(key, { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth, meds: [] });
-            }
-            toNotify.get(key)!.meds.push(`${medName} (${medDose})`);
-          }
+        if (userId) {
+          if (!medsByUser.has(userId)) medsByUser.set(userId, []);
+          medsByUser.get(userId)!.push(`${medName} (${medDose})`);
         }
       }
     }
 
-    console.log(`Sending notifications to ${toNotify.size} subscriptions`);
+    console.log(`Sending notifications to ${medsByUser.size} users`);
 
     // Send push notifications
     let sent = 0;
     let failed = 0;
 
-    for (const [endpoint, data] of toNotify) {
-      const subscription = {
-        endpoint: data.endpoint,
-        keys: { p256dh: data.p256dh, auth: data.auth },
-      };
-
-      const medList = data.meds.join('\n• ');
-      const payload = JSON.stringify({
-        title: '💊 Hora de tus medicamentos',
-        body: `• ${medList}`,
-        tag: `meds-${currentHHMM}`,
-        url: '/',
-      });
-
+    for (const [userId, meds] of medsByUser.entries()) {
+      // Fetch user's name from auth metadata
+      let userName = 'Usuario';
       try {
-        await webpush.sendNotification(subscription, payload);
-        sent++;
-      } catch (err: any) {
-        console.error(`Push failed for ${endpoint.substring(0, 50)}:`, err.statusCode || err.message);
-        failed++;
+        const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (userData?.user?.user_metadata) {
+          const meta = userData.user.user_metadata;
+          userName = meta.name || meta.full_name || meta.preferred_username || 'Usuario';
+          // If name has multiple words, get the first name
+          userName = userName.split(' ')[0];
+        }
+      } catch (e) {
+        console.error('Error fetching user for name:', e);
+      }
 
-        // Clean up expired subscriptions (410 Gone)
-        if (err.statusCode === 410 || err.statusCode === 404) {
-          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint);
-          console.log('Removed expired subscription');
+      const { data: subscriptions } = await supabaseAdmin
+        .from('push_subscriptions')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (!subscriptions || subscriptions.length === 0) continue;
+
+      const medList = meds.join(', ');
+      const bodyText = `Hola ${userName}!, te recuerdo que tenes que tomar a las ${currentHHMM}, las siguientes pastillas: ${medList}`;
+
+      for (const sub of subscriptions) {
+        const subscription = {
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: sub.p256dh,
+            auth: sub.auth,
+          },
+        };
+
+        const payload = JSON.stringify({
+          title: '💊 Recordatorio de Pastillas',
+          body: bodyText,
+          tag: `meds-${currentHHMM}`,
+          url: '/',
+        });
+
+        try {
+          await webpush.sendNotification(subscription, payload);
+          sent++;
+        } catch (err: any) {
+          console.error(`Push failed for ${sub.endpoint.substring(0, 50)}:`, err.statusCode || err.message);
+          failed++;
+
+          // Clean up expired subscriptions (410 Gone)
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
+            console.log('Removed expired subscription');
+          }
         }
       }
     }
