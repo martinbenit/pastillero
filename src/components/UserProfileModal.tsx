@@ -95,6 +95,12 @@ export default function UserProfileModal({ isOpen, onClose }: UserProfileModalPr
         return;
       }
 
+      // Unsubscribe any existing subscription to force a new endpoint (avoids RLS conflict if user changed)
+      const existing = await registration.pushManager.getSubscription();
+      if (existing) {
+        await existing.unsubscribe();
+      }
+
       // Subscribe
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
