@@ -42,10 +42,29 @@ export const useScheduleGrid = () => {
         currentDay = addDays(currentDay, 1);
       }
       
-      const weekMatrix: GridRow[] = PREDEFINED_SLOTS.map(slot => {
+      // Extraer y ordenar todos los horarios (predefinidos + personalizados de los medicamentos)
+      const customSlots = new Set<string>();
+      medications.forEach(med => {
+        med.schedules.forEach(sched => {
+          if (sched.time_slot) customSlots.add(sched.time_slot);
+        });
+      });
+      
+      const allSlots = Array.from(new Set([...PREDEFINED_SLOTS, ...Array.from(customSlots)]))
+        .sort((a, b) => {
+          const getSortKey = (slot: string) => {
+            if (slot.includes('ALMUERZO')) return '12:00';
+            const match = slot.match(/\d{2}:\d{2}/);
+            return match ? match[0] : slot;
+          };
+          return getSortKey(a).localeCompare(getSortKey(b));
+        });
+
+      const weekMatrix: GridRow[] = allSlots.map(slot => {
          const rowCells = weekDays.map(day => {
             const medsInSlot = medications.flatMap(med => {
               const activeSchedules = med.schedules.filter(sched => {
+                // If it's a legacy ALMUERZO matching, just check strict equality since we normalized the slots to 24h
                 if (sched.time_slot !== slot) return false;
 
                 if (sched.frequency === 'diario') return true;

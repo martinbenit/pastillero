@@ -9,34 +9,6 @@ const VAPID_SUBJECT = 'mailto:pastillero@pastilleros.vercel.app';
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-const SLOT_HOURS: Record<string, number> = {
-  "00:00 AM (Medianoche)": 0,
-  "01:00 AM": 1,
-  "02:00 AM": 2,
-  "03:00 AM": 3,
-  "04:00 AM": 4,
-  "05:00 AM": 5,
-  "06:00 AM": 6,
-  "07:00 AM (Ayunas)": 7,
-  "08:00 AM (Mañana)": 8,
-  "09:00 AM": 9,
-  "10:00 AM": 10,
-  "11:00 AM": 11,
-  "12:00 PM (Mediodía)": 12,
-  "ALMUERZO (Mediodía)": 12, // Legacy
-  "13:00 PM": 13,
-  "14:00 PM": 14,
-  "15:00 PM": 15,
-  "16:00 PM (Tarde)": 16,
-  "17:00 PM": 17,
-  "18:00 PM": 18,
-  "19:00 PM": 19,
-  "20:00 PM (Noche)": 20,
-  "21:00 PM": 21,
-  "22:00 PM (Al dormir)": 22,
-  "23:00 PM": 23,
-};
-
 export async function GET(request: Request) {
   // Verify cron secret to prevent unauthorized calls
   const authHeader = request.headers.get('authorization');
@@ -50,28 +22,18 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Get current hour in Argentina timezone (UTC-3)
+    // Get current time in Argentina timezone (UTC-3)
     const now = new Date();
-    const argentinaOffset = -3;
-    const utcHours = now.getUTCHours();
-    const argHour = (utcHours + argentinaOffset + 24) % 24;
     const today = new Date(now.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
     const dayOfWeek = today.getDay(); // 0=Sunday
+    
+    const argHourStr = today.getHours().toString().padStart(2, '0');
+    const argMinuteStr = today.getMinutes().toString().padStart(2, '0');
+    const currentHHMM = `${argHourStr}:${argMinuteStr}`;
 
-    console.log(`Cron running at Argentina hour: ${argHour}, day: ${dayOfWeek}`);
+    console.log(`Cron running at Argentina time: ${currentHHMM}, day: ${dayOfWeek}`);
 
-    // Find which time slots match the current hour
-    const matchingSlots = Object.entries(SLOT_HOURS)
-      .filter(([_, hour]) => hour === argHour)
-      .map(([slot]) => slot);
-
-    if (matchingSlots.length === 0) {
-      return NextResponse.json({ message: `No medication slots at hour ${argHour}` });
-    }
-
-    console.log(`Matching slots: ${matchingSlots.join(', ')}`);
-
-    // Query 1: Get schedules, medications, and patients
+    // Query 1: Get schedules, medications, and patients that match the current HH:MM
     const { data: schedulesData, error: schedulesError } = await supabaseAdmin
       .from('schedules')
       .select(`
@@ -87,11 +49,11 @@ export async function GET(request: Request) {
           )
         )
       `)
-      .in('time_slot', matchingSlots);
+      .ilike('time_slot', `${currentHHMM}%`);
 
     if (schedulesError) throw schedulesError;
     if (!schedulesData || schedulesData.length === 0) {
-      return NextResponse.json({ message: `No schedules found for slots ${matchingSlots.join(', ')}` });
+      return NextResponse.json({ message: `No schedules found for time ${currentHHMM}` });
     }
 
     // Collect user_ids to fetch push subscriptions
@@ -180,7 +142,7 @@ export async function GET(request: Request) {
       const payload = JSON.stringify({
         title: '💊 Hora de tus medicamentos',
         body: `• ${medList}`,
-        tag: `meds-${argHour}`,
+        tag: `meds-${currentHHMM}`,
         url: '/',
       });
 
@@ -201,8 +163,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      hour: argHour,
-      slots: matchingSlots,
+      time: currentHHMM,
       sent,
       failed,
     });

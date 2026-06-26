@@ -19,7 +19,7 @@ export default function MedicationModal({ isOpen, onClose, medication }: Medicat
       name: '',
       dose: '',
       instructions: '',
-      schedules: [{ time_slot: PREDEFINED_SLOTS[1], frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] }]
+      schedules: [{ time_slot: '08:00', frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] }]
     }
   });
 
@@ -36,7 +36,7 @@ export default function MedicationModal({ isOpen, onClose, medication }: Medicat
         name: '',
         dose: '',
         instructions: '',
-        schedules: [{ time_slot: PREDEFINED_SLOTS[1], frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] }]
+        schedules: [{ time_slot: '08:00', frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] }]
       });
     }
   }, [medication, reset, isOpen]);
@@ -115,7 +115,7 @@ export default function MedicationModal({ isOpen, onClose, medication }: Medicat
               <h3 className="text-lg font-black text-gray-900">Horarios de Toma</h3>
               <button
                 type="button"
-                onClick={() => append({ time_slot: PREDEFINED_SLOTS[1], frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] })}
+                onClick={() => append({ time_slot: '08:00', frequency: 'diario', specific_days: [], start_date: new Date().toISOString().split('T')[0] })}
                 className="text-sm font-bold text-white bg-black px-4 py-2 rounded-xl flex items-center gap-1 hover:bg-gray-800 transition-colors"
               >
                 <Plus className="w-4 h-4" /> Agregar
@@ -140,14 +140,12 @@ export default function MedicationModal({ isOpen, onClose, medication }: Medicat
                     <div className="grid grid-cols-2 gap-4">
                       <div className="col-span-2 sm:col-span-1">
                         <label className="block text-xs font-black text-gray-500 uppercase tracking-wide mb-2">Horario Fijo</label>
-                        <select
+                        <input
+                          type="time"
                           {...register(`schedules.${index}.time_slot` as const)}
                           className="w-full bg-[#FDF6F5] border-2 border-gray-900 text-gray-900 font-bold rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-black/10"
-                        >
-                          {PREDEFINED_SLOTS.map(slot => (
-                            <option key={slot} value={slot}>{slot}</option>
-                          ))}
-                        </select>
+                          required
+                        />
                       </div>
                       <div className="col-span-2 sm:col-span-1">
                         <label className="block text-xs font-black text-gray-500 uppercase tracking-wide mb-2">Frecuencia</label>
