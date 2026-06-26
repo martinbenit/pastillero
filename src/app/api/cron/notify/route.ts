@@ -9,14 +9,32 @@ const VAPID_SUBJECT = 'mailto:pastillero@pastilleros.vercel.app';
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
-// Map predefined slots to approximate hours (24h format)
 const SLOT_HOURS: Record<string, number> = {
-  '07:00 AM (Ayunas)': 7,
-  '08:00 AM (Mañana)': 8,
-  'ALMUERZO (Mediodía)': 12,
-  '16:00 PM (Tarde)': 16,
-  '20:00 PM (Noche)': 20,
-  '22:00 PM (Al dormir)': 22,
+  "00:00 AM (Medianoche)": 0,
+  "01:00 AM": 1,
+  "02:00 AM": 2,
+  "03:00 AM": 3,
+  "04:00 AM": 4,
+  "05:00 AM": 5,
+  "06:00 AM": 6,
+  "07:00 AM (Ayunas)": 7,
+  "08:00 AM (Mañana)": 8,
+  "09:00 AM": 9,
+  "10:00 AM": 10,
+  "11:00 AM": 11,
+  "12:00 PM (Mediodía)": 12,
+  "ALMUERZO (Mediodía)": 12, // Legacy
+  "13:00 PM": 13,
+  "14:00 PM": 14,
+  "15:00 PM": 15,
+  "16:00 PM (Tarde)": 16,
+  "17:00 PM": 17,
+  "18:00 PM": 18,
+  "19:00 PM": 19,
+  "20:00 PM (Noche)": 20,
+  "21:00 PM": 21,
+  "22:00 PM (Al dormir)": 22,
+  "23:00 PM": 23,
 };
 
 export async function GET(request: Request) {
