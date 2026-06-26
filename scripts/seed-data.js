@@ -17,17 +17,34 @@ const PREDEFINED_SLOTS = [
 async function seed() {
   console.log('Creando usuario temporal para Héctor...');
   const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-    email: `hector.${crypto.randomBytes(4).toString('hex')}@test.com`,
+    email: `hector.6e205759@test.com`,
     password: 'password123',
     email_confirm: true
   });
 
+  let userId;
   if (authErr) {
-    console.error('Error creando usuario:', authErr);
-    return;
+    if (authErr.code === 'email_exists' || authErr.message.includes('already been registered')) {
+      console.log('El usuario ya existe, obteniendo ID...');
+      const { data: { users }, error: listErr } = await supabase.auth.admin.listUsers();
+      const existingUser = users.find(u => u.email === 'hector.6e205759@test.com');
+      if (existingUser) {
+        userId = existingUser.id;
+      } else {
+        console.error('Error finding user:', listErr);
+        return;
+      }
+    } else {
+      console.error('Error creando usuario:', authErr);
+      return;
+    }
+  } else {
+    userId = authData.user.id;
   }
-  const userId = authData.user.id;
   console.log('User ID:', userId);
+
+  console.log('Limpiando datos viejos...');
+  await supabase.from('patients').delete().eq('user_id', userId);
 
   console.log('Insertando paciente Héctor Raúl Maderna...');
   const { data: patient, error: patientErr } = await supabase
@@ -63,7 +80,7 @@ async function seed() {
     },
     {
       name: 'Lotrial Enalapril',
-      dose: '5 mg', // user prompt says 2.5mg, image says 5mg. I will follow image: 5mg for 08:00 AM, wait... image says Lotrial Enalapril 5mg. The prompt says 2.5mg at 8AM and 2.5mg at 20PM. Image doesn't split it. I will follow prompt schedules, but use image names.
+      dose: '2,5 mg',
       schedules: [
         { time_slot: PREDEFINED_SLOTS[1], frequency: 'diario', specific_days: [], start_date: '2026-06-01' },
         { time_slot: PREDEFINED_SLOTS[4], frequency: 'diario', specific_days: [], start_date: '2026-06-01' }

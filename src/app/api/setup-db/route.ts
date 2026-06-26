@@ -9,7 +9,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const connectionString = 'postgresql://postgres:GjESmkGBZP4h8DkL@db.vwvqrzhpzpetsdrkslse.supabase.co:5432/postgres';
+    // Use the pooler (transaction mode) connection string for Vercel compatibility
+    const connectionString = process.env.DATABASE_URL || 'postgresql://postgres.vwvqrzhpzpetsdrkslse:GjESmkGBZP4h8DkL@aws-0-us-east-1.pooler.supabase.com:6543/postgres';
     const sql = postgres(connectionString, { ssl: 'require' });
 
     console.log('Executing query...');

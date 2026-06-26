@@ -53,13 +53,24 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
       
-      const { data: patient } = await supabase
+      let { data: patient } = await supabase
         .from('patients')
         .select('id')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
         
-      if (!patient) throw new Error('Patient not found');
+      if (!patient) {
+        // Auto-create patient if it doesn't exist
+        const fullName = user.user_metadata?.full_name || 'Usuario';
+        const { data: newPatient, error: createError } = await supabase
+          .from('patients')
+          .insert([{ user_id: user.id, full_name: fullName }])
+          .select('id')
+          .single();
+          
+        if (createError) throw createError;
+        patient = newPatient;
+      }
 
       const { id, schedules, ...medData } = medication;
       
@@ -162,18 +173,32 @@ export const useMedicationStore = create<MedicationState>((set, get) => ({
   fetchMedications: async () => {
     set({ isLoading: true });
     try {
-      // Auto-login to bypass RLS securely using dummy user
-      await supabase.auth.signInWithPassword({
-        email: 'hector.6e205759@test.com',
-        password: 'password123',
-      });
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        set({ isLoading: false });
+        return;
+      }
+
+      // Get patient for current user
+      const { data: patient } = await supabase
+        .from('patients')
+        .select('id')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+
+      if (!patient) {
+        set({ medications: [] });
+        return;
+      }
 
       const { data: meds, error: medsError } = await supabase
         .from('medications')
         .select(`
           *,
           schedules (*)
-        `);
+        `)
+        .eq('patient_id', patient.id);
       
       if (medsError) throw medsError;
       
