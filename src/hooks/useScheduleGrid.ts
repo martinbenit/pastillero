@@ -42,7 +42,7 @@ export const useScheduleGrid = () => {
         currentDay = addDays(currentDay, 1);
       }
       
-      // Extraer y ordenar todos los horarios (predefinidos + personalizados de los medicamentos)
+      // Extraer y ordenar todos los horarios (solo los personalizados de los medicamentos activos)
       const customSlots = new Set<string>();
       medications.forEach(med => {
         med.schedules.forEach(sched => {
@@ -50,7 +50,7 @@ export const useScheduleGrid = () => {
         });
       });
       
-      const allSlots = Array.from(new Set([...PREDEFINED_SLOTS, ...Array.from(customSlots)]))
+      const allSlots = Array.from(customSlots)
         .sort((a, b) => {
           const getSortKey = (slot: string) => {
             if (slot.includes('ALMUERZO')) return '12:00';
