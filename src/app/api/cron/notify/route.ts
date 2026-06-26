@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import webpush from 'web-push';
-import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
 
 // VAPID configuration
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
@@ -27,8 +27,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const connectionString = process.env.DATABASE_URL!;
-    const sql = postgres(connectionString, { ssl: 'require' });
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
     // Get current hour in Argentina timezone (UTC-3)
     const now = new Date();
@@ -46,37 +48,66 @@ export async function GET(request: Request) {
       .map(([slot]) => slot);
 
     if (matchingSlots.length === 0) {
-      await sql.end();
       return NextResponse.json({ message: `No medication slots at hour ${argHour}` });
     }
 
     console.log(`Matching slots: ${matchingSlots.join(', ')}`);
 
-    // Query: Get all schedules that match the current time slot, 
-    // along with their medication info and the user's push subscriptions
-    const results = await sql`
-      SELECT 
-        m.name AS med_name,
-        m.dose AS med_dose,
-        s.time_slot,
-        s.frequency,
-        s.specific_days,
-        s.start_date,
-        p.user_id,
-        ps.endpoint,
-        ps.p256dh,
-        ps.auth
-      FROM schedules s
-      JOIN medications m ON m.id = s.medication_id
-      JOIN patients p ON p.id = m.patient_id
-      JOIN push_subscriptions ps ON ps.user_id = p.user_id
-      WHERE s.time_slot = ANY(${matchingSlots})
-    `;
+    // Query 1: Get schedules, medications, and patients
+    const { data: schedulesData, error: schedulesError } = await supabaseAdmin
+      .from('schedules')
+      .select(`
+        time_slot,
+        frequency,
+        specific_days,
+        start_date,
+        medications (
+          name,
+          dose,
+          patients (
+            user_id
+          )
+        )
+      `)
+      .in('time_slot', matchingSlots);
 
-    // Filter by frequency
+    if (schedulesError) throw schedulesError;
+    if (!schedulesData || schedulesData.length === 0) {
+      return NextResponse.json({ message: `No schedules found for slots ${matchingSlots.join(', ')}` });
+    }
+
+    // Collect user_ids to fetch push subscriptions
+    const userIds = new Set<string>();
+    schedulesData.forEach((s: any) => {
+      const userId = s.medications?.patients?.user_id;
+      if (userId) userIds.add(userId);
+    });
+
+    if (userIds.size === 0) {
+      return NextResponse.json({ message: 'No users to notify' });
+    }
+
+    // Query 2: Get push subscriptions
+    const { data: subsData, error: subsError } = await supabaseAdmin
+      .from('push_subscriptions')
+      .select('user_id, endpoint, p256dh, auth')
+      .in('user_id', Array.from(userIds));
+
+    if (subsError) throw subsError;
+
+    // Create a map of user_id -> push subscriptions
+    const userSubsMap = new Map<string, any[]>();
+    (subsData || []).forEach(sub => {
+      if (!userSubsMap.has(sub.user_id)) {
+        userSubsMap.set(sub.user_id, []);
+      }
+      userSubsMap.get(sub.user_id)!.push(sub);
+    });
+
+    // Filter by frequency and build notifications map
     const toNotify: Map<string, { endpoint: string; p256dh: string; auth: string; meds: string[] }> = new Map();
 
-    for (const row of results) {
+    for (const row of schedulesData) {
       let shouldNotify = false;
 
       if (row.frequency === 'diario') {
@@ -98,11 +129,20 @@ export async function GET(request: Request) {
       }
 
       if (shouldNotify) {
-        const key = row.endpoint;
-        if (!toNotify.has(key)) {
-          toNotify.set(key, { endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth, meds: [] });
+        const userId = (row as any).medications?.patients?.user_id;
+        const medName = (row as any).medications?.name;
+        const medDose = (row as any).medications?.dose;
+
+        if (userId && userSubsMap.has(userId)) {
+          const userSubs = userSubsMap.get(userId)!;
+          for (const sub of userSubs) {
+            const key = sub.endpoint;
+            if (!toNotify.has(key)) {
+              toNotify.set(key, { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth, meds: [] });
+            }
+            toNotify.get(key)!.meds.push(`${medName} (${medDose})`);
+          }
         }
-        toNotify.get(key)!.meds.push(`${row.med_name} (${row.med_dose})`);
       }
     }
 
@@ -135,13 +175,11 @@ export async function GET(request: Request) {
 
         // Clean up expired subscriptions (410 Gone)
         if (err.statusCode === 410 || err.statusCode === 404) {
-          await sql`DELETE FROM push_subscriptions WHERE endpoint = ${endpoint}`;
+          await supabaseAdmin.from('push_subscriptions').delete().eq('endpoint', endpoint);
           console.log('Removed expired subscription');
         }
       }
     }
-
-    await sql.end();
 
     return NextResponse.json({
       success: true,

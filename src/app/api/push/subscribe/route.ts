@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import postgres from 'postgres';
 
 export async function POST(request: Request) {
   try {
@@ -26,21 +26,25 @@ export async function POST(request: Request) {
 
     const subscription = await request.json();
 
-    // Use postgres to bypass RLS
-    const sql = postgres(process.env.DATABASE_URL!, { ssl: 'require' });
-    
-    await sql`
-      INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
-      VALUES (${user.id}, ${subscription.endpoint}, ${subscription.keys.p256dh}, ${subscription.keys.auth})
-      ON CONFLICT (endpoint) 
-      DO UPDATE SET 
-        user_id = EXCLUDED.user_id,
-        p256dh = EXCLUDED.p256dh,
-        auth = EXCLUDED.auth,
-        updated_at = NOW()
-    `;
-    
-    await sql.end();
+    // Use admin client to bypass RLS
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { error } = await supabaseAdmin
+      .from('push_subscriptions')
+      .upsert(
+        {
+          user_id: user.id,
+          endpoint: subscription.endpoint,
+          p256dh: subscription.keys.p256dh,
+          auth: subscription.keys.auth,
+        },
+        { onConflict: 'endpoint' }
+      );
+
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
@@ -72,9 +76,17 @@ export async function DELETE(request: Request) {
 
     const { endpoint } = await request.json();
 
-    const sql = postgres(process.env.DATABASE_URL!, { ssl: 'require' });
-    await sql`DELETE FROM push_subscriptions WHERE user_id = ${user.id} AND endpoint = ${endpoint}`;
-    await sql.end();
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const { error } = await supabaseAdmin
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('endpoint', endpoint);
+    if (error) throw error;
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
