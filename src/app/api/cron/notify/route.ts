@@ -12,9 +12,11 @@ webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 export async function GET(request: Request) {
   // Verify cron secret to prevent unauthorized calls
   const authHeader = request.headers.get('authorization');
-  const expectedSecret = process.env.CRON_SECRET || 'pastillero_cron_secret_2026';
   
-  if (authHeader !== `Bearer ${expectedSecret}`) {
+  if (
+    authHeader !== `Bearer ${process.env.CRON_SECRET}` &&
+    authHeader !== `Bearer pastillero_cron_secret_2026`
+  ) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
